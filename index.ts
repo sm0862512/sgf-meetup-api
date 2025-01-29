@@ -1,3 +1,4 @@
+import { platform } from 'node:os';
 import { join } from 'path';
 import {
 	BasePathMapping,
@@ -9,7 +10,7 @@ import {
 	RestApi,
 } from 'aws-cdk-lib/aws-apigateway';
 import { AttributeType, Table } from 'aws-cdk-lib/aws-dynamodb';
-import { Runtime } from 'aws-cdk-lib/aws-lambda';
+import { LayerVersion, Runtime } from 'aws-cdk-lib/aws-lambda';
 import { App, Stack, RemovalPolicy, Duration, CfnOutput } from 'aws-cdk-lib';
 import {
 	NodejsFunction,
@@ -82,10 +83,17 @@ export class ApiLambdaCrudDynamoDBStack extends Stack {
 			removalPolicy: RemovalPolicy.RETAIN,
 		});
 
+		const sentryLambdaLayer = LayerVersion.fromLayerVersionArn(
+			this,
+			'sentryLayer',
+			'arn:aws:lambda:us-east-2:943013980633:layer:SentryNodeServerlessSDK:299',
+		);
+
 		const nodeJsFunctionProps: NodejsFunctionProps = {
 			depsLockFilePath: join(__dirname, 'lambdas', 'package-lock.json'),
 			runtime: Runtime.NODEJS_18_X,
 			timeout: Duration.minutes(4),
+			layers: [sentryLambdaLayer],
 			bundling: {
 				commandHooks: {
 					beforeBundling(
@@ -93,7 +101,9 @@ export class ApiLambdaCrudDynamoDBStack extends Stack {
 						outputDir: string,
 					): string[] {
 						return [
-							`cp ${inputDir}/.env ${outputDir} 2>/dev/null || :`,
+							platform() === 'win32'
+								? `copy ${inputDir}\\.env ${outputDir} >$null 2>&1`
+								: `cp ${inputDir}/.env ${outputDir} 2>/dev/null || :`,
 						];
 					},
 					beforeInstall(): string[] {
@@ -164,6 +174,27 @@ export class ApiLambdaCrudDynamoDBStack extends Stack {
 		new CfnOutput(this, 'getMeetupTokenLambdaInvokePolicyArn', {
 			value: getMeetupTokenLambdaInvokePolicy.managedPolicyArn,
 			description: 'ARN of the policy to invoke lambda',
+		});
+
+		const sentryLambdaLayerPolicy = new ManagedPolicy(
+			this,
+			'sentryLambdaLayerPolicy',
+			{
+				managedPolicyName: 'sentryLambdaLayerPolicy',
+				statements: [
+					new PolicyStatement({
+						actions: ['lambda:GetLayerVersion'],
+						resources: [
+							'arn:aws:lambda:us-east-2:943013980633:layer:SentryNodeServerlessSDK:*',
+						],
+					}),
+				],
+			},
+		);
+
+		new CfnOutput(this, 'sentryLambdaLayerPolicyArn', {
+			value: sentryLambdaLayerPolicy.managedPolicyArn,
+			description: 'ARN of the policy to get sentry lambda layer version',
 		});
 
 		getMeetupTokenLambda.grantInvoke(importerLambda);
