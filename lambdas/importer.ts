@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import * as dotenv from 'dotenv';
 import fetch from 'node-fetch';
 import {
 	AttributeValue,
@@ -10,6 +10,8 @@ import {
 import * as lambda from '@aws-sdk/client-lambda';
 import { v4 as uuid } from 'uuid';
 import * as Sentry from '@sentry/node';
+
+dotenv.config({ override: true });
 
 import {
 	MeetupEvent,
